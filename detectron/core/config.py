@@ -928,6 +928,7 @@ __C.DEDUP_BOXES = 1 / 16.
 # overflowing
 # Heuristic choice based on that would scale a 16 pixel anchor up to 1000 pixels
 __C.BBOX_XFORM_CLIP = np.log(1000. / 16.)
+__C.BBOX_XFORM_CLIPe = 1000. / 16.
 
 # Pixel mean values (BGR order) as a (1, 1, 3) array
 # We use the same pixel mean for all networks even though it's not exactly what
@@ -981,6 +982,12 @@ __C.EXPECTED_RESULTS_EMAIL = b''
 # Models and proposals referred to by URL are downloaded to a local cache
 # specified by DOWNLOAD_CACHE
 __C.DOWNLOAD_CACHE = b'/tmp/detectron-download-cache'
+
+
+__C.XYXY = False
+__C.PRED_STD = False
+__C.STD_NMS = False
+__C.STD_TH = .9
 
 
 # ---------------------------------------------------------------------------- #

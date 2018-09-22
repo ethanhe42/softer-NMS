@@ -38,6 +38,8 @@ from detectron.utils.c2 import gauss_fill
 from detectron.utils.net import get_group_gn
 import detectron.utils.blob as blob_utils
 
+from caffe2.python import workspace, core
+
 
 # ---------------------------------------------------------------------------- #
 # Fast R-CNN outputs and losses
@@ -70,6 +72,17 @@ def add_fast_rcnn_outputs(model, blob_in, dim):
         weight_init=gauss_fill(0.001),
         bias_init=const_fill(0.0)
     )
+    if cfg.PRED_STD:
+        model.FC(
+            blob_in,
+            'bbox_pred_std',
+            dim,
+            num_bbox_reg_classes * 4,
+            weight_init=gauss_fill(0.0001),
+            bias_init=const_fill(1.0)
+        )
+        model.net.Abs('bbox_pred_std', 'bbox_pred_std_abs')
+
 
 
 def add_fast_rcnn_losses(model):
@@ -78,17 +91,95 @@ def add_fast_rcnn_losses(model):
         ['cls_score', 'labels_int32'], ['cls_prob', 'loss_cls'],
         scale=model.GetLossScale()
     )
-    loss_bbox = model.net.SmoothL1Loss(
-        [
-            'bbox_pred', 'bbox_targets', 'bbox_inside_weights',
-            'bbox_outside_weights'
-        ],
-        'loss_bbox',
-        scale=model.GetLossScale()
-    )
-    loss_gradients = blob_utils.get_loss_gradients(model, [loss_cls, loss_bbox])
+    if cfg.PRED_STD:
+        #loss_bbox = model.net.KLLoss(
+        #    [
+        #        'bbox_pred','bbox_pred_std_abs', 'bbox_targets', 'bbox_inside_weights',
+        #        
+        #    ],
+        #    'loss_bbox',
+        #    scale=model.GetLossScale()
+        #)
+        #stop pred
+        model.net.Copy('bbox_pred', 'bbox_pred0')
+        #model.net.Copy('bbox_pred_std_abs', 'bbox_pred_std_abs0')
+        #model.net.StopGradient('bbox_pred0', 'bbox_pred0')
+        #model.net.StopGradient('bbox_pred_std_abs0', 'bbox_pred_std_abs0')
+        #model.net.StopGradient('bbox_inside_weights', 'bbox_inside_weights')
+        #model.net.StopGradient('bbox_targets', 'bbox_targets')
+        ################# bbox_std grad, stop pred
+        #log(std)
+        model.net.ConstantFill([], 'sigma', value=0.0001, shape=(1,))
+        model.net.Add(['bbox_pred_std_abs', 'sigma'], 'bbox_pred_std_abs_')
+        model.net.Log('bbox_pred_std_abs_', 'bbox_pred_std_abs_log_')
+        model.net.Scale('bbox_pred_std_abs_log_', 'bbox_pred_std_abs_log', scale=-0.5*model.GetLossScale())
+        model.net.StopGradient('bbox_outside_weights', 'bbox_outside_weights')
+        model.net.Mul(['bbox_pred_std_abs_log', 'bbox_outside_weights'], 'bbox_pred_std_abs_logw')
+        model.net.ReduceMean('bbox_pred_std_abs_logw', 'bbox_pred_std_abs_logwr', axes=[0])
+        bbox_pred_std_abs_logw_loss = model.net.SumElements(
+                'bbox_pred_std_abs_logwr', 'bbox_pred_std_abs_logw_loss')
+        #pred0 - y
+        model.net.Sub(['bbox_pred0', 'bbox_targets'], 'bbox_in')
+        #val = in*(pred0 - u)
+        model.net.Mul(['bbox_in', 'bbox_inside_weights'], 'bbox_inw')
+        #absval
+        model.net.Abs('bbox_inw', 'bbox_l1abs')
+        #l12 mask
+        model.net.ConstantFill([], 'one', value=1., shape=(1,))
+        model.net.GE(['bbox_l1abs', 'one'], 'wl1', broadcast=1)
+        model.net.LT(['bbox_l1abs', 'one'], 'wl2', broadcast=1)
+        model.net.Cast('wl1', 'wl1f', to=core.DataType.FLOAT) 
+        model.net.Cast('wl2', 'wl2f', to=core.DataType.FLOAT)
+        #model.net.StopGradient('wl1f', 'wl1f')
+        #model.net.StopGradient('wl2f', 'wl2f')
+        # val^2
+        model.net.Mul(['bbox_inw', 'bbox_inw'], 'bbox_sq')
+        # 0.5 val^2
+        model.net.Mul(['bbox_sq', 'wl2f'], 'bbox_l2_')
+        model.net.Scale('bbox_l2_', 'bbox_l2', scale=0.5)
+        # absval - 0.5
+        model.net.ConstantFill([], 'half', value=.5, shape=(1,))
+        model.net.Sub(['bbox_l1abs', 'half'], 'bbox_l1abs_', broadcast=1)
+        model.net.Mul(['bbox_l1abs_', 'wl1f'], 'bbox_l1')
+        # sml1 = w * l1 + w*l2
+        model.net.Add(['bbox_l1', 'bbox_l2'], 'bbox_inws')
+        #alpha * sml1
+        model.net.StopGradient('bbox_inws', 'bbox_inws')
+        model.net.Mul(['bbox_pred_std_abs', 'bbox_inws'], 'bbox_inws_out')
+        model.net.Scale('bbox_inws_out', 'bbox_inws_out', scale=model.GetLossScale())
+        model.net.ReduceMean('bbox_inws_out', 'bbox_inws_outr', axes=[0])
+        bbox_pred_std_abs_mulw_loss = model.net.SumElements(
+                ['bbox_inws_outr'], 'bbox_pred_std_abs_mulw_loss')
+
+        #bbox_pred grad, stop std
+        loss_bbox = model.net.SmoothL1Loss(
+            [
+                'bbox_pred', 'bbox_targets', 'bbox_inside_weights',
+                'bbox_pred_std_abs'
+            ],
+            'loss_bbox',
+            scale=model.GetLossScale()
+        )
+        loss_gradients = blob_utils.get_loss_gradients(model, [loss_cls, loss_bbox, 
+            bbox_pred_std_abs_mulw_loss, 
+            bbox_pred_std_abs_logw_loss
+            ])
+        model.AddLosses(['loss_cls', 'loss_bbox', 
+            'bbox_pred_std_abs_mulw_loss', 'bbox_pred_std_abs_logw_loss'
+            ])
+    else:
+        loss_bbox = model.net.SmoothL1Loss(
+            [
+                'bbox_pred', 'bbox_targets', 'bbox_inside_weights',
+                'bbox_outside_weights'
+            ],
+            'loss_bbox',
+            scale=model.GetLossScale()
+        )
+
+        loss_gradients = blob_utils.get_loss_gradients(model, [loss_cls, loss_bbox])
+        model.AddLosses(['loss_cls', 'loss_bbox'])
     model.Accuracy(['cls_prob', 'labels_int32'], 'accuracy_cls')
-    model.AddLosses(['loss_cls', 'loss_bbox'])
     model.AddMetrics('accuracy_cls')
     return loss_gradients
 

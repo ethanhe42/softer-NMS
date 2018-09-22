@@ -62,6 +62,18 @@ _DATASETS = {
         _RAW_DIR:
             _DATA_DIR + '/cityscapes/raw'
     },
+    'coco_2017_train': {
+        _IM_DIR:
+            _DATA_DIR + '/coco/coco_train2017',
+        _ANN_FN:
+            _DATA_DIR + '/coco/annotations/instances_train2017.json'
+    },
+    'coco_2017_val': {
+        _IM_DIR:
+            _DATA_DIR + '/coco/coco_val2017',
+        _ANN_FN:
+            _DATA_DIR + '/coco/annotations/instances_val2017.json'
+    },
     'coco_2014_train': {
         _IM_DIR:
             _DATA_DIR + '/coco/coco_train2014',

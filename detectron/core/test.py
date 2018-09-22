@@ -45,6 +45,7 @@ import detectron.utils.blob as blob_utils
 import detectron.utils.boxes as box_utils
 import detectron.utils.image as image_utils
 import detectron.utils.keypoints as keypoint_utils
+import detectron.utils.py_cpu_nms as py_nms_utils
 
 logger = logging.getLogger(__name__)
 
@@ -62,9 +63,14 @@ def im_detect_all(model, im, box_proposals, timers=None):
     if cfg.TEST.BBOX_AUG.ENABLED:
         scores, boxes, im_scale = im_detect_bbox_aug(model, im, box_proposals)
     else:
-        scores, boxes, im_scale = im_detect_bbox(
-            model, im, cfg.TEST.SCALE, cfg.TEST.MAX_SIZE, boxes=box_proposals
-        )
+        if cfg.STD_NMS:
+            scores, boxes, im_scale, confs = im_detect_bbox(
+                model, im, cfg.TEST.SCALE, cfg.TEST.MAX_SIZE, boxes=box_proposals
+            )
+        else:
+            scores, boxes, im_scale = im_detect_bbox(
+                model, im, cfg.TEST.SCALE, cfg.TEST.MAX_SIZE, boxes=box_proposals
+            )
     timers['im_detect_bbox'].toc()
 
     # score and boxes are from the whole image after score thresholding and nms
@@ -72,7 +78,10 @@ def im_detect_all(model, im, box_proposals, timers=None):
     # cls_boxes boxes and scores are separated by class and in the format used
     # for evaluating results
     timers['misc_bbox'].tic()
-    scores, boxes, cls_boxes = box_results_with_nms_and_limit(scores, boxes)
+    if cfg.STD_NMS:
+        scores, boxes, cls_boxes = box_results_with_nms_and_limit(scores, boxes, confs=confs)
+    else:
+        scores, boxes, cls_boxes = box_results_with_nms_and_limit(scores, boxes)
     timers['misc_bbox'].toc()
 
     if cfg.MODEL.MASK_ON and boxes.shape[0] > 0:
@@ -163,6 +172,12 @@ def im_detect_bbox(model, im, target_scale, target_max_size, boxes=None):
         # unscale back to raw image space
         boxes = rois[:, 1:5] / im_scale
 
+    if cfg.STD_NMS:
+        confs = workspace.FetchBlob(core.ScopedName('bbox_pred_std_abs'))
+        confs = 1/ (confs**.5)
+    else:
+        confs = None
+
     # Softmax class probabilities
     scores = workspace.FetchBlob(core.ScopedName('cls_prob')).squeeze()
     # In case there is 1 proposal
@@ -190,8 +205,12 @@ def im_detect_bbox(model, im, target_scale, target_max_size, boxes=None):
         # Map scores and predictions back to the original set of boxes
         scores = scores[inv_index, :]
         pred_boxes = pred_boxes[inv_index, :]
+	if confs is not None:
+        	confs = confs[inv_index, :]
 
-    return scores, pred_boxes, im_scale
+    if confs is None:
+        return scores, pred_boxes, im_scale
+    return scores, pred_boxes, im_scale, confs
 
 
 def im_detect_bbox_aug(model, im, box_proposals=None):
@@ -746,7 +765,7 @@ def combine_heatmaps_size_dep(hms_ts, ds_ts, us_ts, boxes, heur_f):
     return hms_c
 
 
-def box_results_with_nms_and_limit(scores, boxes):
+def box_results_with_nms_and_limit(scores, boxes, confs=None):
     """Returns bounding-box detection results by thresholding on scores and
     applying non-maximum suppression (NMS).
 
@@ -771,7 +790,11 @@ def box_results_with_nms_and_limit(scores, boxes):
         dets_j = np.hstack((boxes_j, scores_j[:, np.newaxis])).astype(
             np.float32, copy=False
         )
-        if cfg.TEST.SOFT_NMS.ENABLED:
+        if cfg.STD_NMS:
+            confs_j = confs[inds, j * 4:(j + 1) * 4]
+            nms_dets, _ = py_nms_utils.soft(dets_j,
+                    confidence=confs_j )
+        elif cfg.TEST.SOFT_NMS.ENABLED:
             nms_dets, _ = box_utils.soft_nms(
                 dets_j,
                 sigma=cfg.TEST.SOFT_NMS.SIGMA,

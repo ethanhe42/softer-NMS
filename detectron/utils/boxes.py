@@ -55,7 +55,10 @@ bbox_overlaps = cython_bbox.bbox_overlaps
 
 
 def boxes_area(boxes):
-    """Compute the area of an array of boxes."""
+    """Compute the area of an array of boxes.
+    Args:
+	boxes: xyxy
+    """
     w = (boxes[:, 2] - boxes[:, 0] + 1)
     h = (boxes[:, 3] - boxes[:, 1] + 1)
     areas = w * h
@@ -114,7 +117,10 @@ def filter_small_boxes(boxes, min_size):
 
 
 def clip_boxes_to_image(boxes, height, width):
-    """Clip an array of boxes to an image with the given height and width."""
+    """Clip an array of boxes to an image with the given height and width.
+    Args:
+	boxes: xyxy
+    """
     boxes[:, [0, 2]] = np.minimum(width - 1., np.maximum(0., boxes[:, [0, 2]]))
     boxes[:, [1, 3]] = np.minimum(height - 1., np.maximum(0., boxes[:, [1, 3]]))
     return boxes
@@ -131,7 +137,10 @@ def clip_xyxy_to_image(x1, y1, x2, y2, height, width):
 
 def clip_tiled_boxes(boxes, im_shape):
     """Clip boxes to image boundaries. im_shape is [height, width] and boxes
-    has shape (N, 4 * num_tiled_boxes)."""
+    has shape (N, 4 * num_tiled_boxes).
+    Args:
+	boxes: xyxy
+    """
     assert boxes.shape[1] % 4 == 0, \
         'boxes.shape[1] is {:d}, but must be divisible by 4.'.format(
         boxes.shape[1]
@@ -151,7 +160,11 @@ def bbox_transform(boxes, deltas, weights=(1.0, 1.0, 1.0, 1.0)):
     """Forward transform that maps proposal boxes to predicted ground-truth
     boxes using bounding-box regression deltas. See bbox_transform_inv for a
     description of the weights argument.
+    Args:
+	boxes: xyxy
     """
+    if cfg.XYXY:
+	return bbox_transform_xyxy(boxes, deltas, weights)
     if boxes.shape[0] == 0:
         return np.zeros((0, deltas.shape[1]), dtype=deltas.dtype)
 
@@ -189,6 +202,84 @@ def bbox_transform(boxes, deltas, weights=(1.0, 1.0, 1.0, 1.0)):
 
     return pred_boxes
 
+def bbox_transform_xyxy(boxes, deltas, weights=(1.0, 1.0, 1.0, 1.0)):                                          
+    if boxes.shape[0] == 0:                                                     
+        return np.zeros((0, deltas.shape[1]), dtype=deltas.dtype)               
+                                                                                
+    boxes = boxes.astype(deltas.dtype, copy=False)                              
+                                                                                
+    #  0 1 2 3                                                                  
+    #  < v > ^                                                                  
+                                                                                
+    widths = boxes[:, 2] - boxes[:, 0] + 1.0                                    
+    heights = boxes[:, 3] - boxes[:, 1] + 1.0                                   
+                                                                                
+    l = boxes[:, 0]                                                             
+    r = boxes[:, 2]                                                             
+    d = boxes[:, 1]                                                             
+    u = boxes[:, 3]                                                             
+                                                                                
+    wx, wy, ww, wh = weights
+    dl = deltas[:, 0::4] / wx                                                      
+    dr = deltas[:, 1::4] / wy                                                      
+    dd = deltas[:, 2::4] / wx                                                      
+    du = deltas[:, 3::4] / wy                                                      
+    # Prevent sending too large values into np.exp()                            
+    dl = np.minimum(dl, cfg.BBOX_XFORM_CLIPe)                                    
+    dr = np.minimum(dr, cfg.BBOX_XFORM_CLIPe)                                    
+    dd = np.minimum(dd, cfg.BBOX_XFORM_CLIPe)                                    
+    du = np.minimum(du, cfg.BBOX_XFORM_CLIPe)                                    
+                                                                                
+    pred_l = dl * widths[:, np.newaxis] + l[:, np.newaxis]                      
+    pred_r = dr * widths[:, np.newaxis] + r[:, np.newaxis]                      
+    pred_d = dd * heights[:, np.newaxis] + d[:, np.newaxis]                     
+    pred_u = du * heights[:, np.newaxis] + u[:, np.newaxis]                     
+                                                                                
+    pred_boxes = np.zeros(deltas.shape, dtype=deltas.dtype)                     
+    # x1                                                                        
+    pred_boxes[:, 0::4] = pred_l                                                
+    # y1                                                                        
+    pred_boxes[:, 1::4] = pred_d                                                
+    # x2                                                                        
+    pred_boxes[:, 2::4] = pred_r                                                
+    # y2                                                                        
+    pred_boxes[:, 3::4] = pred_u                                                
+                                                                                
+    return pred_boxes 
+
+def bbox_std_transform_xyxy(boxes, bbox_epsilon, describ=False):
+    #bbox_std = np.exp(bbox_epsilon) 
+    bbox_std = 1 / bbox_epsilon**.5
+    if describ:
+	import pandas as pd
+        print((pd.DataFrame(bbox_std.flatten()).describe()))
+    boxes = boxes.astype(bbox_std.dtype, copy=False)
+    widths = boxes[:, 2::4] - boxes[:, 0::4] + 1.0
+    heights = boxes[:, 3::4] - boxes[:, 1::4] + 1.0
+
+    pred = np.zeros(bbox_std.shape, dtype=bbox_std.dtype)
+    # x1
+    pred[:, 0::4] = bbox_std[:, 0::4] * widths
+    # y1
+    pred[:, 1::4] = bbox_std[:, 2::4] * heights
+    # x2
+    pred[:, 2::4] = bbox_std[:, 1::4] * widths 
+    # y2
+    pred[:, 3::4] = bbox_std[:, 3::4] * heights
+
+    unnorm_pred = np.zeros(bbox_std.shape, dtype=bbox_std.dtype)
+    # x1
+    unnorm_pred[:, 0::4] = bbox_std[:, 0::4]
+    # y1
+    unnorm_pred[:, 1::4] = bbox_std[:, 2::4]
+    # x2
+    unnorm_pred[:, 2::4] = bbox_std[:, 1::4]
+    # y2
+    unnorm_pred[:, 3::4] = bbox_std[:, 3::4]
+
+    if describ:
+        print((pd.DataFrame(pred.flatten()).describe()))
+    return pred, unnorm_pred
 
 def bbox_transform_inv(boxes, gt_boxes, weights=(1.0, 1.0, 1.0, 1.0)):
     """Inverse transform that computes target bounding-box regression deltas
@@ -202,7 +293,12 @@ def bbox_transform_inv(boxes, gt_boxes, weights=(1.0, 1.0, 1.0, 1.0)):
     we use a fixed set of weights (10., 10., 5., 5.) by default. These are
     approximately the weights one would get from COCO using the previous unit
     stdev heuristic.
+    Args:
+	boxes: [x1 y1 x2 y2]
+	gt_boxes: [x1 y1 x2 y2]
     """
+    if cfg.XYXY:
+	return bbox_transform_inv_xyxy(boxes, gt_boxes, weights)
     ex_widths = boxes[:, 2] - boxes[:, 0] + 1.0
     ex_heights = boxes[:, 3] - boxes[:, 1] + 1.0
     ex_ctr_x = boxes[:, 0] + 0.5 * ex_widths
@@ -223,9 +319,38 @@ def bbox_transform_inv(boxes, gt_boxes, weights=(1.0, 1.0, 1.0, 1.0)):
                          targets_dh)).transpose()
     return targets
 
+def bbox_transform_inv_xyxy(ex_rois, gt_rois, weights=(1.0, 1.0, 1.0, 1.0)):
+    #  0 1 2 3
+    #  < v > ^
+
+    gt_l = gt_rois[:, 0]
+    gt_r = gt_rois[:, 2]
+    gt_d = gt_rois[:, 1]
+    gt_u = gt_rois[:, 3]
+
+    ex_l = ex_rois[:, 0]
+    ex_r = ex_rois[:, 2]
+    ex_d = ex_rois[:, 1]
+    ex_u = ex_rois[:, 3]
+
+    ex_widths = ex_r - ex_l + 1.0
+    ex_heights = ex_u - ex_d + 1.0
+
+    wx, wy, ww, wh = weights
+    targets_dl = wx * (gt_l - ex_l) / ex_widths
+    targets_dr = wy * (gt_r - ex_r) / ex_widths
+    targets_dd = wx * (gt_d - ex_d) / ex_heights
+    targets_du = wy * (gt_u - ex_u) / ex_heights
+
+    targets = np.vstack(
+        (targets_dl, targets_dr, targets_dd, targets_du)).transpose()
+    return targets
 
 def expand_boxes(boxes, scale):
-    """Expand an array of boxes by a given scale."""
+    """Expand an array of boxes by a given scale.
+    Args:
+	boxes: xyxy
+    """
     w_half = (boxes[:, 2] - boxes[:, 0]) * .5
     h_half = (boxes[:, 3] - boxes[:, 1]) * .5
     x_c = (boxes[:, 2] + boxes[:, 0]) * .5
@@ -244,7 +369,10 @@ def expand_boxes(boxes, scale):
 
 
 def flip_boxes(boxes, im_width):
-    """Flip boxes horizontally."""
+    """Flip boxes horizontally.
+    Args:
+	boxes: xyxy
+    """
     boxes_flipped = boxes.copy()
     boxes_flipped[:, 0::4] = im_width - boxes[:, 2::4] - 1
     boxes_flipped[:, 2::4] = im_width - boxes[:, 0::4] - 1
@@ -252,7 +380,10 @@ def flip_boxes(boxes, im_width):
 
 
 def aspect_ratio(boxes, aspect_ratio):
-    """Perform width-relative aspect ratio transformation."""
+    """Perform width-relative aspect ratio transformation.
+    Args:
+	boxes: xyxy
+    """
     boxes_ar = boxes.copy()
     boxes_ar[:, 0::4] = aspect_ratio * boxes[:, 0::4]
     boxes_ar[:, 2::4] = aspect_ratio * boxes[:, 2::4]
@@ -275,7 +406,10 @@ def box_voting(top_dets, all_dets, thresh, scoring_method='ID', beta=1.0):
         inds_to_vote = np.where(top_to_all_overlaps[k] >= thresh)[0]
         boxes_to_vote = all_boxes[inds_to_vote, :]
         ws = all_scores[inds_to_vote]
-        top_dets_out[k, :4] = np.average(boxes_to_vote, axis=0, weights=ws)
+	try:
+            top_dets_out[k, :4] = np.average(boxes_to_vote, axis=0, weights=ws)
+	except:
+	    pass
         if scoring_method == 'ID':
             # Identity, nothing to do
             pass
