@@ -1,4 +1,4 @@
-# Softer-NMS: Rethinking Bounding Box Regression for Accurate Object Detection
+# [Softer-NMS: Rethinking Bounding Box Regression for Accurate Object Detection](https://arxiv.org/abs/1809.08545)
 [Yihui He](http://yihui-he.github.io/), [Xiangyu Zhang](https://scholar.google.com/citations?user=yuB-cfoAAAAJ&hl=en&oi=ao) , [Kris Kitani](http://www.cs.cmu.edu/~kkitani/) and [Marios Savvides](http://www.cmu-biometrics.org), Carnegie Mellon University
 
 We introduce a novel bounding box regression loss for learning bounding box transformation and localization variance together. The resulting localization variance is utilized in our new non-maximum suppression method to improve localization accuracy for object detection. On MS-COCO, we boost the AP of VGG-16 faster R-CNN from 23.6% to **29.1%** with a single model and nearly no additional computational overhead. More importantly, our method improves the AP of ResNet-50 FPN fast R-CNN from 36.8% to **37.8%**, which achieves state-of-the-art bounding box refinement result.
