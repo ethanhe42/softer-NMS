@@ -13,7 +13,7 @@ If you find the code useful in your research, please consider citing:
     @article{softernms,
       title={Softer-NMS: Rethinking Bounding Box Regression for Accurate Object Detection},
       author={He, Yihui and Zhang, Xiangyu and Kitani, Kris and Savvides, Marios},
-      journal={arXiv preprint arXiv:},
+      journal={arXiv preprint arXiv:1809.08545},
       year={2018}
     }
 
