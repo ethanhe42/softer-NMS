@@ -46,6 +46,9 @@ python2 tools/train_net.py \
     OUTPUT_DIR /tmp/detectron-output
 ```
 
+### FAQ
+Please create a [new issue](https://github.com/yihui-he/softer-NMS/issues/new).
+
 
 # Detectron
 
