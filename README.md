@@ -46,9 +46,30 @@ python2 tools/train_net.py \
     OUTPUT_DIR /tmp/detectron-output
 ```
 
+### Customization
+If you want to integrate softer-NMS into your own code, you can find all modifications to [`detectron/`](https://github.com/yihui-he/softer-NMS/tree/master/detectron) at lines with flags: `XYXY, PRED_STD, STD_NMS`.
+
+If you want to train your own model, Create two configs similar to these two:
+First, in [`_init.yaml`](https://github.com/yihui-he/softer-NMS/blob/master/configs/12_2017_baselines/fast_rcnn_R-50-FPN_2x_init.yaml#L39) config, you need to add:
+
+    XYXY: True
+    PRED_STD: False
+    STD_NMS: False
+
+Other staffs remain the same.
+
+Second, in [`_our.yaml`](https://github.com/yihui-he/softer-NMS/blob/master/configs/12_2017_baselines/fast_rcnn_R-50-FPN_2x_our.yaml#L40) config, you need:
+
+    XYXY: True
+    PRED_STD: True
+    STD_NMS: True
+
+Learning rate should be changed accordingly (see [here](https://github.com/yihui-he/softer-NMS/blob/master/configs/12_2017_baselines/fast_rcnn_R-50-FPN_2x_our.yaml#L9)). `TRAIN.WEIGHTS` should be the path to the output of `_init.yaml`.
+
 ### FAQ
 Please create a [new issue](https://github.com/yihui-he/softer-NMS/issues/new).
 
+-------------------------------------------
 
 # Detectron
 
