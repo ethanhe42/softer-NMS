@@ -1,3 +1,5 @@
+## Deprecated. Please see our CVPR 2019 paper: [Bounding Box Regression with Uncertainty for Accurate Object Detection](https://github.com/yihui-he/KL-Loss)
+
 # [Softer-NMS: Rethinking Bounding Box Regression for Accurate Object Detection](https://arxiv.org/abs/1809.08545)
 [Yihui He](http://yihui-he.github.io/), [Xiangyu Zhang](https://scholar.google.com/citations?user=yuB-cfoAAAAJ&hl=en&oi=ao) , [Kris Kitani](http://www.cs.cmu.edu/~kkitani/) and [Marios Savvides](http://www.cmu-biometrics.org), Carnegie Mellon University
 
