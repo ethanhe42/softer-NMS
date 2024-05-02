@@ -1,3 +1,3 @@
-https://yihui-he.github.io/blog/bounding-box-regression-with-uncertainty-for-accurate-object-detection
+https://github.com/ethanhe42/KL-Loss
 
 Deprecated. Please see link above
